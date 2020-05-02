@@ -6,30 +6,17 @@
 #include "x86_desc.h"
 #include "lib.h"
 #include "i8259.h"
-#include "rtc.h"
-#include "keyboard.h"
-#include "filesystem.h"
-#include "idt.h"
-#include "paging.h"
-#include "systemcalls.h"
 #include "debug.h"
-#include "tests.h"
-#include "pit.h"
-#include "terminal.h"
 
-#define RUN_TESTS
-
+/* Macros. */
 /* Check if the bit BIT in FLAGS is set. */
 #define CHECK_FLAG(flags, bit)   ((flags) & (1 << (bit)))
 
 /* Check if MAGIC is valid and print the Multiboot information structure
    pointed by ADDR. */
 void entry(unsigned long magic, unsigned long addr) {
-    /* boot information */
-    multiboot_info_t *mbi;
 
-    /* make a 32-bit word to store address of filesystem (for later) */
-    uint32_t fs_addr;
+    multiboot_info_t *mbi;
 
     /* Clear the screen. */
     clear();
@@ -42,9 +29,6 @@ void entry(unsigned long magic, unsigned long addr) {
 
     /* Set MBI to the address of the Multiboot information structure. */
     mbi = (multiboot_info_t *) addr;
-
-    /* Obtain starting address of file system */
-    fs_addr = ((module_t *) (mbi->mods_addr))->mod_start;
 
     /* Print out the flags. */
     printf("flags = 0x%#x\n", (unsigned)mbi->flags);
@@ -149,50 +133,21 @@ void entry(unsigned long magic, unsigned long addr) {
         ltr(KERNEL_TSS);
     }
 
-    /* intialize the terminals */
-    terminal_init();
-
-    /* Initialize the IDT */
-    IDT_init();
-
     /* Init the PIC */
     i8259_init();
 
     /* Initialize devices, memory, filesystem, enable device interrupts on the
      * PIC, any other initialization stuff... */
 
-    /* Initialize RTC */
-    init_rtc();
-
-    /* Initialize Keyboard */
-    init_keyboard();
-    
-    /* Initialize paging and virtual memory */
-    paging_init();
-
-    /* Initialize file system */
-    init_fs(fs_addr);
-
-    /* Initialize PIT */
-    init_pit();
-
     /* Enable interrupts */
     /* Do not enable the following until after you have set up your
      * IDT correctly otherwise QEMU will triple fault and simple close
      * without showing you any output */
-    /* printf("Enabling Interrupts\n"); */
-    sti();
-
-#ifdef RUN_TESTS
-    /* Run tests */
-    launch_tests();
-#endif
-    /* clears the screen */
-    clear();
+    /*printf("Enabling Interrupts\n");
+    sti();*/
 
     /* Execute the first program ("shell") ... */
-    execute((uint8_t*) "shell");
-    
+
     /* Spin (nicely, so we don't chew up cycles) */
     asm volatile (".1: hlt; jmp .1;");
 }

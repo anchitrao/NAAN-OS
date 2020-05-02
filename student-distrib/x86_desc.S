@@ -12,9 +12,6 @@
 .globl gdt_ptr
 .globl idt_desc_ptr, idt
 
-# declares gdt_desc_ptr to be global as used in boot.S
-.globl gdt_desc_ptr
-
 .align 4
 
 
@@ -86,15 +83,6 @@ ldt_desc_ptr:
     .quad 0
 
 gdt_bottom:
-
-    .align 16
-
-gdt_desc_ptr:
-    # limit (2 bytes) stored as addresses between gdt and its end
-    .word gdt_bottom - gdt - 1
-    # base address (4 bytes) stored as address of gdt
-    .long gdt
-
 
     .align 16
 ldt:

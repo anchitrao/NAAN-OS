@@ -2,84 +2,26 @@
  * vim:ts=4 noexpandtab */
 
 #include "lib.h"
-#include "paging.h"
-#include "systemcalls.h"
-#include "types.h"
 
+#define VIDEO       0xB8000
+#define NUM_COLS    80
+#define NUM_ROWS    25
+#define ATTRIB      0x7
+
+static int screen_x;
+static int screen_y;
 static char* video_mem = (char *)VIDEO;
-
-#define VGA_CONTROL_REG 0x3D4
-#define VGA_DATA_REG 0x3D5
-
-
-/* void set_cursor(int x_pos, int y_pos, uint8_t term);
- * Inputs: int x_pos, y_pos - takes in x and y-coordinates of new cursor location on screen
- *         uint8_t term - updates set_cursor for terminal function called on
- * Return Value: none
- * Function: updates cursor location on screen and in terminal structs */
-void set_cursor(int x_pos, int y_pos, uint8_t term) {
-    /* updates screen_x and screen_y values for currently scheduled terminal */
-    terminal[term].screen_x = x_pos;
-    terminal[term].screen_y = y_pos;
-
-    /* sets a position variable in row-major order */
-    uint16_t pos = terminal[term].screen_y * NUM_COLS + terminal[term].screen_x;
- 
-    if(term == curr_term) {
-        /* sets starting cursor position and cursor shape information */
-        outb(0x0F, VGA_CONTROL_REG);
-        outb((uint8_t) (pos & 0xFF), VGA_DATA_REG);
-        /* sets ending cursor position and cursor shape information */
-        outb(0x0E, VGA_CONTROL_REG);
-        outb((uint8_t) ((pos >> 8) & 0xFF), VGA_DATA_REG);
-    }
-}
-
-/* void scroll(uint8_t term);
- * Inputs: uint8_t term - terminal scroll function has been called on 
- * Return Value: none
- * Function: scrolls vertically down one line, clearing bottom-most video memory (top-most graphically) */
-void scroll(uint8_t term) {
-    /* writes to video memory depending on current terminal / process */
-    video_mem = (term != curr_term) ? terminal[sched_term].video_mem : (char*) VIDEO;
-
-    /* iterates through every row, except for last row */
-    int i, j;
-    for (i = 0; i < NUM_ROWS - 1; i++) {
-        /* iterates through every column on a given line */
-        for (j = 0; j < NUM_COLS; j++) {
-            /* places information row "above" in video memory at current row */
-            *(uint8_t *)(video_mem + ((i * NUM_COLS + j) << 1)) = *(uint8_t *)(video_mem + (((i + 1) * NUM_COLS + j) << 1));
-            /* accounts for extra scan-line placeholder */
-            *(uint8_t *)(video_mem + ((i * NUM_COLS + j) << 1) + 1) = ATTRIB;
-        }
-    }
-    
-    /* iterates through all columns in bottom-most row in video memory */
-    for (j = 0; j < NUM_COLS; j++) {
-        /* clearing last row */
-        *(uint8_t *)(video_mem + (((NUM_ROWS - 1) * NUM_COLS + j) << 1)) = ' ';
-        /* accounts for extra scan-line placeholder */
-        *(uint8_t *)(video_mem + (((NUM_ROWS - 1) * NUM_COLS + j) << 1) + 1) = ATTRIB;
-    }
-
-    /* sets cursor to back to left-most point of line */
-    set_cursor(0, terminal[term].screen_y, term);
-}
 
 /* void clear(void);
  * Inputs: void
  * Return Value: none
  * Function: Clears video memory */
 void clear(void) {
-    video_mem = (char*) VIDEO;    
     int32_t i;
     for (i = 0; i < NUM_ROWS * NUM_COLS; i++) {
         *(uint8_t *)(video_mem + (i << 1)) = ' ';
         *(uint8_t *)(video_mem + (i << 1) + 1) = ATTRIB;
     }
-    /* reset cursor position */
-    set_cursor(0, 0, curr_term);
 }
 
 /* Standard printf().
@@ -221,109 +163,21 @@ int32_t puts(int8_t* s) {
     return index;
 }
 
-/* void keyboard_putc(uint8_t c);
- * Inputs: uint_8* c - character to print
- * Return Value: void
- *  Function: Output a character to the console */
-void keyboard_putc(uint8_t c) {
-    /* save flags + protect */
-    uint32_t flags;
-    cli_and_save(flags);
-
-    /* write onto video screen */
-    video_mem = (char*) VIDEO;
-
-    if(c == '\n' || c == '\r') {
-        /* scroll screen if at bottom */
-        if (terminal[curr_term].screen_y == NUM_ROWS - 1)
-            scroll(curr_term);
-        /* otherwise, move to next line */
-        else
-            set_cursor(0, terminal[curr_term].screen_y + 1, curr_term);
-    } else {
-        *(uint8_t *)(video_mem + ((NUM_COLS * terminal[curr_term].screen_y + terminal[curr_term].screen_x) << 1)) = c;
-        *(uint8_t *)(video_mem + ((NUM_COLS * terminal[curr_term].screen_y + terminal[curr_term].screen_x) << 1) + 1) = ATTRIB;
-        terminal[curr_term].screen_x++;
-
-        /* if characters on screen exceeds columns in line, move to next line */
-        /* or scroll if at bottom of screen */
-        if(terminal[curr_term].screen_x >= NUM_COLS) {
-            /* scroll screen if at bottom */
-            if (terminal[curr_term].screen_y == NUM_ROWS - 1)
-                scroll(curr_term);
-            /* otherwise, move to next line */
-            else
-                set_cursor(0, terminal[curr_term].screen_y + 1, curr_term);
-        }
-        terminal[curr_term].screen_x %= NUM_COLS;
-        terminal[curr_term].screen_y = (terminal[curr_term].screen_y + (terminal[curr_term].screen_x / NUM_COLS)) % NUM_ROWS;
-    }
-    
-    /* sets a position variable in row-major order */
-    uint16_t pos = terminal[curr_term].screen_y * NUM_COLS + terminal[curr_term].screen_x;
- 
-    /* sets starting cursor position and cursor shape information */
-	outb(0x0F, VGA_CONTROL_REG);
-	outb((uint8_t) (pos & 0xFF), VGA_DATA_REG);
-    /* sets ending cursor position and cursor shape information */
-	outb(0x0E, VGA_CONTROL_REG);
-	outb((uint8_t) ((pos >> 8) & 0xFF), VGA_DATA_REG);
-
-    /* restore flags */
-    restore_flags(flags);
-}
-
 /* void putc(uint8_t c);
- * Inputs: uint_8* c - character to print
+ * Inputs: uint_8* c = character to print
  * Return Value: void
  *  Function: Output a character to the console */
 void putc(uint8_t c) {
-    /* save flags + protect */
-    uint32_t flags;
-    cli_and_save(flags);
-
-    video_mem = (sched_term != curr_term) ? terminal[sched_term].video_mem : (char*) VIDEO;
-    // video_mem = (char*) VIDEO;
     if(c == '\n' || c == '\r') {
-        /* scroll screen if at bottom */
-        if (terminal[sched_term].screen_y == NUM_ROWS - 1)
-            scroll(sched_term);
-        /* otherwise, move to next line */
-        else
-            set_cursor(0, terminal[sched_term].screen_y + 1, sched_term);
+        screen_y++;
+        screen_x = 0;
     } else {
-        *(uint8_t *)(video_mem + ((NUM_COLS * terminal[sched_term].screen_y + terminal[sched_term].screen_x) << 1)) = c;
-        *(uint8_t *)(video_mem + ((NUM_COLS * terminal[sched_term].screen_y + terminal[sched_term].screen_x) << 1) + 1) = ATTRIB;
-        terminal[sched_term].screen_x++;
-
-        /* if characters on screen exceeds columns in line, move to next line */
-        /* or scroll if at bottom of screen */
-        if(terminal[sched_term].screen_x >= NUM_COLS) {
-            /* scroll screen if at bottom */
-            if (terminal[sched_term].screen_y == NUM_ROWS - 1)
-                scroll(sched_term);
-            /* otherwise, move to next line */
-            else
-                set_cursor(0, terminal[sched_term].screen_y + 1, sched_term);
-        }
-        terminal[sched_term].screen_x %= NUM_COLS;
-        terminal[sched_term].screen_y = (terminal[sched_term].screen_y + (terminal[sched_term].screen_x / NUM_COLS)) % NUM_ROWS;
+        *(uint8_t *)(video_mem + ((NUM_COLS * screen_y + screen_x) << 1)) = c;
+        *(uint8_t *)(video_mem + ((NUM_COLS * screen_y + screen_x) << 1) + 1) = ATTRIB;
+        screen_x++;
+        screen_x %= NUM_COLS;
+        screen_y = (screen_y + (screen_x / NUM_COLS)) % NUM_ROWS;
     }
-    
-    /* sets a position variable in row-major order */
-    uint16_t pos = terminal[sched_term].screen_y * NUM_COLS + terminal[sched_term].screen_x;
-    
-    if(curr_term == sched_term) {
-        /* sets starting cursor position and cursor shape information */
-        outb(0x0F, VGA_CONTROL_REG);
-        outb((uint8_t) (pos & 0xFF), VGA_DATA_REG);
-        /* sets ending cursor position and cursor shape information */
-        outb(0x0E, VGA_CONTROL_REG);
-        outb((uint8_t) ((pos >> 8) & 0xFF), VGA_DATA_REG);
-    }
-    
-    /* restore flags */
-    restore_flags(flags);
 }
 
 /* int8_t* itoa(uint32_t value, int8_t* buf, int32_t radix);
