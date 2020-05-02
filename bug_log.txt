@@ -1,0 +1,138 @@
+Checkpoint 1:
+
+GDT:
+    - N/A 
+        - No bugs
+
+IDT:
+    - IDT not being loaded
+        - forgot to call IDT_init() in kernel.c in addition to using lidt in IDT_init()
+
+Devices:
+    - "No such instruction" assembler error
+        - When writing the ASM wrapper for rtc_intr_handler, the Makefile would assemble rtc_handler.S first
+          and would then try to use the assembler to compile the remaining .c files. 
+        - The solution to this was to make another header file for just rtc_handler.S and define a macro only used for assembling
+          ASM files
+    - RTC interrupt handler never being called
+        - We accidentally assigned the RTC interrupt handler to the keyboard
+        - Solution was to assign it to the RTC
+    - Keyboard handler not working
+        - Problem was the handler never sent EOI signal back to the PIC
+        - Solved by calling send_EOI at the end of interrupt handler
+
+Paging:
+    - Boot Looping
+        - page directory was being loaded incorrectly because we didn't inclue the $ in fornt of page_directory when setting cr3
+        - paging was enabled by cr0 before cr4 set the page size extension so we just swapped the order of these operations in the assembly code
+
+--------------------------------------------------------------------------------------------------------------------------------------------------
+Checkpoint 2:
+
+Terminal Driver: 
+    - Not changing position of buffer index
+        - Problem found by test case output, and testing different scenarios 
+        - Changed the value of nbytes instead of directly changing value of buffer index
+    - Cursor divide by zero error
+        - Original cursor implementation resulted in a "divide by zero" error
+        - Solved by using our brains. Blindly used code from os dev without checking for matching syntax of outb.
+    - Cursor not being reset when cleared (CTRL+L)
+         - Cursor position changed in all uses, except for when being cleared; cursor remained at last edited spot
+         - Solved by setting registers in clear()
+    - Screen not scrolling when encountering \n and no enter key
+         - Problem found when trying to print verylargetextwithverylongname.txt
+         - Added scroll or next line functionality in putc \n case
+
+File System: 
+    - Over writing the counter gariable
+        - Problem was there because we were copy more than 32 bytes in memcopy so "verylargetextwithverylongname.txt" was copied it overwrote the counter lead to inifite loop
+        - We fixed it by using strncpy and saying we only want to copy 32 bits which is the max length of file name
+    - We were reading bytes after the EOF
+        - Since did not propertly set our function to handle the EOF conditon
+        - added if statement (in loop for reading bytes in file) to check if (# of bytes read) + (offset) was greater than number of bytes in the file 
+    - Paging faulting when trying to access the data blocks
+        - incorrect understanding of the "length" parameter in the inode block
+        - Clarified understanding with TA and tweaked read_data 
+
+RTC Driver: 
+    - Frequency always set to default (2 Hz)
+        - Changes in frequency calls by our set_frequency function did not change the frequency of the characters appearing on the screen
+        - Solved by a mistake of updating the default frequency instead of the rtc_frequency
+    - Frequency was being set improperly
+        - Frequency changes resulted in wrong frequency updates to the characters on the screen
+        - Solved by clearing bottom bits of the old register A
+
+--------------------------------------------------------------------------------------------------------------------------------------------------
+Checkpoint 3:
+
+Execute:
+    - Page Faulting:
+        - wrong page in virtual memory being mapped to physical page 0x20 not 0x80
+        - pushed items in wrong order for context switch
+        - we were trying to reverse the entry point string in context switch but because it is little endian, there is no need to reverse it
+Halt: 
+    - Page Faulting
+        - we were doing the shell check before remapping the pages
+        - did not properly store the esp and ebp values into the pcb in execute
+        - mapping parent's process to wrong address space in physical memory
+    - Not doing anything
+        - incorrectly used iret instead of jmp
+Open
+    - Page Faulting
+        - tried to dereference a null dentry pointer
+System Call Linkage
+    - Moving to incorrect function in jump table
+        - decremented eax to properly zero-index into jump table
+
+--------------------------------------------------------------------------------------------------------------------------------------------------
+Checkpoint 4:
+
+Read and Open File:
+    - Open on verylargetextwithverylongname.txt:
+        - 32 byte buffer was not storing Null character at end, so dentry was never found 
+        - solved by appending null character at end of buffer
+    - Read file:
+        - did not read all datablocks for file
+        - block_offset was incorrectly initialized to 0
+    - Incorrect return values for Read
+        - returned 0 on failure
+        - should return -1 for failure and 0 if no bytes were read
+
+Vidmap
+    - Fish not showing updates
+        - virtual memory address was mapped to wrong place in physical memory
+
+Getargs
+    - Unexpected output for executables that needed an arg, but didn't get one
+        - case where no args were passed was not checked
+        - check if args buffer length was 0, return -1
+
+Ctrl+L 
+    - did not reprompt "391OS>", solved by dealing with that specific case in terminal.c
+    
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+Checkpoint 5:
+
+Multi-Terminal:
+    - All three shells displaying on the same terminal  
+        - fixed and added new keyboard/scheduling functions in lib.c
+
+Scheduling: 
+    - Double page faulting on spamming ls
+        - sti() was done in the after the push flags within the execute_context_switch()
+        - sti() was moved to before the push flags within the execute_context_switch()
+
+    - Spaces in between pingpong printing
+        - cli_and_save_flags() and restore_flags() in putc to prevent scheduling from interfering
+        
+    - Page fault on return to terminal 1
+        - execute context switching pushed ebp/esp for root shells
+        - conditional to prevent pushing ebp/esp for first shell launched on each terminal
+
+    - Commands were executed onto the wrong terminal
+        - parent pcb was not set properly during scheduling
+        - had to redefine parent pcb depending on the current process
+
+RTC Virtualization: 
+    - Initializing interrupts on open
+        - prevented by preventing rtc_open from actually updating for interrupts on open
