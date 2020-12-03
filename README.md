@@ -4,8 +4,6 @@ A fully functional Linux based operating system with support for scheduled conte
 
 Built as a final project for [ECE 391 at UIUC](https://ece.illinois.edu/academics/courses/ece391)
 
-## 
-
 ## Academic Integrity Violation
 
 Please refer your student code and the academic-integrity.md file for academic integrity requirements. You may use code from this project freely under the license terms, but it is **your own responsibility** to ensure that such use meets the requirements set by your course and department. I am not responsible for any academic integrity violations for use of other students copying any portion of this code.
@@ -52,8 +50,6 @@ A short demo of the OS demonstrates round-robin scheduling on a uniprocessor sys
 
 ![demo](demo.gif)
 
-###
-
 ## Contributors
 
 * Anchit Rao
@@ -64,7 +60,3 @@ A short demo of the OS demonstrates round-robin scheduling on a uniprocessor sys
 ## License
 
 This project is licensed under the MIT License (see the [LICENSE.md](LICENSE.md) file for details). However, some submodule components are licensed under the GPL. Please refer to the specific submodules for their detailed license texts.
-
-
-
-##
